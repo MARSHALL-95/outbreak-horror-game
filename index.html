@@ -123,7 +123,7 @@
 
     function createRoom() {
       const statusEl = document.getElementById('status');
-      statusEl.innerText = "Connecting to PeerJS Cloud...";
+      statusEl.innerText = "Connecting to PeerJS Server...";
 
       if (typeof Peer === 'undefined') {
         statusEl.innerHTML = "<b style='color:red;'>ERROR: PeerJS library failed to load. Check internet.</b>";
@@ -132,9 +132,9 @@
 
       try {
         const code = makeCode();
-        const roomPeerId = 'ob-' + code.toLowerCase() + '-' + Math.floor(Math.random() * 1000);
+        const targetPeerId = 'outbreak-room-' + code.toLowerCase();
         
-        peer = new Peer(roomPeerId, { debug: 1 });
+        peer = new Peer(targetPeerId);
 
         peer.on('open', (id) => {
           statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 24px;">${code}</b><br><span style="color:#aaa;">Enter code on Operator device!</span>`;
@@ -149,7 +149,12 @@
         });
 
         peer.on('error', (err) => {
-          statusEl.innerHTML = "<b style='color:red;'>Peer Connection Error. Click Host again.</b>";
+          if (err.type === 'unavailable-id') {
+            statusEl.innerHTML = "<b style='color:yellow;'>Room ID busy. Retrying...</b>";
+            setTimeout(createRoom, 500);
+          } else {
+            statusEl.innerHTML = "<b style='color:red;'>Peer Error: " + err.type + "</b>";
+          }
         });
       } catch (e) {
         statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
@@ -171,30 +176,16 @@
       }
 
       try {
-        statusEl.innerText = "Searching for Room " + input.toUpperCase() + "...";
-        peer = new Peer({ debug: 1 });
+        statusEl.innerText = "Connecting to Room " + input.toUpperCase() + "...";
+        peer = new Peer();
 
         peer.on('open', () => {
-          peer.listAllPeers((peers) => {
-            const target = peers.find(p => p.startsWith('ob-' + input));
-            const targetId = target || ('ob-' + input);
-            
-            conn = peer.connect(targetId);
+          const targetPeerId = 'outbreak-room-' + input;
+          conn = peer.connect(targetPeerId);
 
-            conn.on('open', () => {
-              setupDataListener();
-              startGame("OPERATOR");
-            });
-
-            setTimeout(() => {
-              if (!conn || !conn.open) {
-                conn = peer.connect('ob-' + input);
-                conn.on('open', () => {
-                  setupDataListener();
-                  startGame("OPERATOR");
-                });
-              }
-            }, 1000);
+          conn.on('open', () => {
+            setupDataListener();
+            startGame("OPERATOR");
           });
 
           peer.on('error', (err) => {
@@ -286,29 +277,23 @@
       if (userRole === "FIELD_AGENT") {
         const w = window.innerWidth, h = window.innerHeight;
 
-        // Grid Floor
         let grid = scene.add.graphics();
         grid.lineStyle(1, 0x003311, 0.3);
         for (let x = 0; x < w; x += 40) grid.lineBetween(x, 0, x, h);
         for (let y = 0; y < h; y += 40) grid.lineBetween(0, y, w, y);
 
-        // Map Wall Colliders
         walls = scene.physics.add.staticGroup();
-        
-        // Lab Wall Barriers
         let w1 = scene.add.rectangle(w * 0.3, h * 0.4, 20, 200, 0x00aa44);
         let w2 = scene.add.rectangle(w * 0.7, h * 0.6, 20, 200, 0x00aa44);
         scene.physics.add.existing(w1, true);
         scene.physics.add.existing(w2, true);
         walls.add(w1); walls.add(w2);
 
-        // Player Agent
         agentPlayer = scene.add.circle(100, h / 2, 12, 0x00ff66);
         scene.physics.add.existing(agentPlayer);
         agentPlayer.body.setCollideWorldBounds(true);
         scene.physics.add.collider(agentPlayer, walls);
 
-        // Zombie Mutator
         zombie = scene.add.circle(w - 100, h / 2, 14, 0xff0000);
         scene.physics.add.existing(zombie);
         zombie.body.setCollideWorldBounds(true);
@@ -331,7 +316,6 @@
 
       agentPlayer.body.setVelocity(vx * 160, vy * 160);
 
-      // Zombie AI chasing Agent
       if (zombie) {
         let dx = agentPlayer.x - zombie.x;
         let dy = agentPlayer.y - zombie.y;
@@ -346,7 +330,6 @@
         }
       }
 
-      // Flashlight & Fog rendering
       flashlightGraphics.clear();
       flashlightGraphics.fillStyle(0x000000, 0.95);
       flashlightGraphics.fillRect(0, 0, window.innerWidth, window.innerHeight);
