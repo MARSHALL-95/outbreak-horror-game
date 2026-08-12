@@ -124,7 +124,7 @@
 
     function createRoom() {
       const statusEl = document.getElementById('status');
-      statusEl.innerText = "Initializing PeerJS...";
+      statusEl.innerText = "Connecting to PeerJS Cloud...";
 
       if (typeof Peer === 'undefined') {
         statusEl.innerHTML = "<b style='color:red;'>ERROR: PeerJS library failed to load. Check internet.</b>";
@@ -133,12 +133,19 @@
 
       try {
         const code = makeCode();
-        statusEl.innerText = "Generating room " + code + "...";
+        // Dynamic Room Prefix to prevent collision hangs
+        const roomPeerId = 'ob-' + code.toLowerCase() + '-' + Math.floor(Math.random() * 1000);
+        
+        peer = new Peer(roomPeerId, {
+          debug: 1
+        });
 
-        peer = new Peer('outbreak-v2-' + code.toLowerCase());
+        // Save session room code mapping
+        window.activeRoomCode = code;
+        window.activeRoomPeerId = roomPeerId;
 
         peer.on('open', (id) => {
-          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 22px;">${code}</b><br><span style="color:#aaa;">Share code with Operator!</span>`;
+          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 24px;">${code}</b><br><span style="color:#aaa;">Enter this 4-letter code on the Operator device!</span>`;
         });
 
         peer.on('connection', (connection) => {
@@ -150,7 +157,8 @@
         });
 
         peer.on('error', (err) => {
-          statusEl.innerHTML = "<b style='color:red;'>Peer Error: " + err.type + "</b>";
+          console.error(err);
+          statusEl.innerHTML = "<b style='color:red;'>Peer Connection Error: " + err.type + ". Click Host again.</b>";
         });
       } catch (e) {
         statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
@@ -158,7 +166,7 @@
     }
 
     function joinRoom() {
-      const input = document.getElementById('join-code').value.trim().toUpperCase();
+      const input = document.getElementById('join-code').value.trim().toLowerCase();
       const statusEl = document.getElementById('status');
 
       if (input.length !== 4) {
@@ -172,20 +180,39 @@
       }
 
       try {
-        statusEl.innerText = "Connecting to " + input + "...";
-        peer = new Peer();
+        statusEl.innerText = "Searching for Room " + input.toUpperCase() + "...";
+        peer = new Peer({ debug: 1 });
 
         peer.on('open', () => {
-          const targetId = 'outbreak-v2-' + input.toLowerCase();
-          conn = peer.connect(targetId);
+          // Attempt connecting via prefix matching
+          let connected = false;
+          
+          // Connect to target host
+          peer.listAllPeers((peers) => {
+            const target = peers.find(p => p.startsWith('ob-' + input));
+            const targetId = target || ('ob-' + input);
+            
+            conn = peer.connect(targetId);
 
-          conn.on('open', () => {
-            setupDataListener();
-            startGame("OPERATOR");
+            conn.on('open', () => {
+              setupDataListener();
+              startGame("OPERATOR");
+            });
+
+            setTimeout(() => {
+              if (!conn || !conn.open) {
+                // Direct fallback attempt
+                conn = peer.connect('ob-' + input);
+                conn.on('open', () => {
+                  setupDataListener();
+                  startGame("OPERATOR");
+                });
+              }
+            }, 1000);
           });
 
           peer.on('error', (err) => {
-            statusEl.innerHTML = "<b style='color:red;'>Could not find room " + input + "</b>";
+            statusEl.innerHTML = "<b style='color:red;'>Room " + input.toUpperCase() + " not found or inactive.</b>";
           });
         });
       } catch (e) {
