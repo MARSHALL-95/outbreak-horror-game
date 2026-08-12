@@ -7,7 +7,9 @@
 
   <!-- Open Source Libraries via CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
   <style>
     * { box-sizing: border-box; user-select: none; }
@@ -110,7 +112,22 @@
   <div id="game-container"></div>
 
   <script>
-    let peer = null, conn = null, userRole = null;
+    // Configured with Tharun's Firebase Project
+    const firebaseConfig = {
+      apiKey: "AIzaSyDwYssSsGmEIi_KSP3BtRVPkC0CtzrdtyY",
+      authDomain: "outbreak-game-a9f99.firebaseapp.com",
+      databaseURL: "https://outbreak-game-a9f99-default-rtdb.firebaseio.com",
+      projectId: "outbreak-game-a9f99",
+      storageBucket: "outbreak-game-a9f99.firebasestorage.app",
+      messagingSenderId: "779814838513",
+      appId: "1:779814838513:web:16edbd0d071b5b6b120950",
+      measurementId: "G-0EKMGEBPL1"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let roomCode = null, userRole = null, roomRef = null;
 
     function makeCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -122,89 +139,72 @@
     }
 
     function createRoom() {
+      roomCode = makeCode();
       const statusEl = document.getElementById('status');
-      statusEl.innerText = "Initializing Host Room...";
+      statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
 
-      const code = makeCode();
-      const hostPeerId = 'ob-room-' + code.toLowerCase();
+      roomRef = db.ref('rooms/' + roomCode);
+      roomRef.set({
+        status: 'waiting',
+        created: Date.now()
+      });
 
-      try {
-        peer = new Peer(hostPeerId, {
-          config: {
-            'iceServers': [
-              { 'urls': 'stun:stun.l.google.com:19302' },
-              { 'urls': 'stun:stun1.l.google.com:19302' },
-              { 'urls': 'stun:stun2.l.google.com:19302' }
-            ]
-          }
-        });
+      // Listen for Operator joining
+      roomRef.child('status').on('value', (snapshot) => {
+        if (snapshot.val() === 'active' && userRole === null) {
+          startGame("FIELD_AGENT");
+        }
+      });
 
-        peer.on('open', (id) => {
-          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${code}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
-        });
-
-        peer.on('connection', (connection) => {
-          conn = connection;
-          conn.on('open', () => {
-            setupDataListener();
-            startGame("FIELD_AGENT");
-          });
-        });
-
-        peer.on('error', (err) => {
-          if (err.type === 'unavailable-id') {
-            createRoom(); // Retry with fresh code if room taken
-          } else {
-            statusEl.innerHTML = "<b style='color:red;'>Initialization Error: " + err.type + "</b>";
-          }
-        });
-      } catch (e) {
-        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
-      }
+      // Listen for incoming game events (door overrides)
+      roomRef.child('events').on('child_added', (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.sender !== 'FIELD_AGENT' && window.onPeerEvent) {
+          window.onPeerEvent(data);
+        }
+      });
     }
 
     function joinRoom() {
-      const input = document.getElementById('join-code').value.trim().toLowerCase();
-      const statusEl = document.getElementById('status');
-
+      const input = document.getElementById('join-code').value.trim().toUpperCase();
       if (input.length !== 4) {
         alert("Please enter a valid 4-letter room code!");
         return;
       }
 
-      statusEl.innerText = "Connecting to Room " + input.toUpperCase() + "...";
+      roomCode = input;
+      roomRef = db.ref('rooms/' + roomCode);
 
-      try {
-        peer = new Peer({
-          config: {
-            'iceServers': [
-              { 'urls': 'stun:stun.l.google.com:19302' },
-              { 'urls': 'stun:stun1.l.google.com:19302' },
-              { 'urls': 'stun:stun2.l.google.com:19302' }
-            ]
+      roomRef.once('value', (snapshot) => {
+        if (!snapshot.exists()) {
+          document.getElementById('status').innerHTML = "<b style='color:red;'>Room " + roomCode + " not found. Ensure Host is waiting!</b>";
+          return;
+        }
+
+        // Mark room as active
+        roomRef.update({ status: 'active' });
+
+        // Listen for incoming game events (telemetry, zombie alerts)
+        roomRef.child('events').on('child_added', (snapshot) => {
+          const data = snapshot.val();
+          if (data && data.sender !== 'OPERATOR' && window.onPeerEvent) {
+            window.onPeerEvent(data);
           }
         });
 
-        peer.on('open', () => {
-          const targetHostId = 'ob-room-' + input;
-          conn = peer.connect(targetHostId, { reliable: true });
-
-          conn.on('open', () => {
-            setupDataListener();
-            startGame("OPERATOR");
-          });
-
-          peer.on('error', (err) => {
-            statusEl.innerHTML = "<b style='color:red;'>Room " + input.toUpperCase() + " not found or inactive.</b>";
-          });
-        });
-      } catch (e) {
-        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
-      }
+        startGame("OPERATOR");
+      });
     }
 
     function sendGameEvent(type, payload = {}) {
-      if (conn && conn.open) conn.send({ type, payload });
+      if (roomRef) {
+        roomRef.child('events').push({
+          sender: userRole,
+          type: type,
+          payload: payload,
+          timestamp: Date.now()
+        });
+      }
     }
 
     function logSystem(msg) {
@@ -212,14 +212,6 @@
       if (logs) {
         logs.innerHTML += `<div>> ${msg}</div>`;
         logs.scrollTop = logs.scrollHeight;
-      }
-    }
-
-    function setupDataListener() {
-      if (conn) {
-        conn.on('data', (data) => {
-          if (window.onPeerEvent) window.onPeerEvent(data);
-        });
       }
     }
 
