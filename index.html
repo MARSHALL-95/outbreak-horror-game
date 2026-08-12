@@ -1,283 +1,333 @@
 <!DOCTYPE html>
 <html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>DEADLINE: Outbreak</title>
 
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>DEADLINE: Outbreak</title>
-<!-- Open Source Libraries via Free CDN -->
-<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-<script src="https://unpkg.com/peerjs@5.5.2/dist/peerjs.min.js"></script>
-<style>
-    * {
-        box-sizing: border-box;
+  <!-- Open Source Libraries via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 
-        peer.on('error', (err)=> {
-                console.error(err);
-                document.getElementById('status').innerText="Error creating room. Try again.";
-            });
+  <style>
+    * { box-sizing: border-box; user-select: none; }
+    body {
+      margin: 0; padding: 0;
+      background: #050505; color: #00ff66;
+      font-family: 'Courier New', Courier, monospace;
+      overflow: hidden;
+    }
+    
+    #lobby {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 100;
+      background: rgba(10, 15, 10, 0.95);
+      padding: 30px;
+      border: 2px solid #00ff66;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+      width: 90%; max-width: 400px;
+      text-align: center;
+    }
+    h1 { margin-top: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 2px; }
+    button {
+      background: #00ff66; color: #000; font-weight: bold;
+      padding: 12px 20px; border: none; border-radius: 4px;
+      cursor: pointer; margin: 8px 0; width: 100%;
+      font-size: 14px; text-transform: uppercase;
+    }
+    button:active { background: #00cc52; }
+    input {
+      padding: 12px; text-align: center; font-size: 16px; width: 100%;
+      background: #111; border: 1px solid #00ff66; color: #00ff66;
+      border-radius: 4px; margin-bottom: 8px; letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .divider { margin: 15px 0; border-top: 1px dashed #00ff66; opacity: 0.4; }
+    #status { font-size: 13px; color: #aaa; margin-top: 15px; word-break: break-all; }
+
+    #operator-ui {
+      display: none; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 50; background: #0a0a0a; border: 4px solid #333;
+      grid-template-rows: 50px 1fr 140px; grid-template-columns: 280px 1fr;
+      grid-template-areas: "header header" "sidebar main" "footer main";
+    }
+    .op-header { grid-area: header; background: #111; border-bottom: 2px solid #ff3333; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; color: #ff3333; font-weight: bold; }
+    .op-sidebar { grid-area: sidebar; background: #0d0d0d; border-right: 2px solid #222; padding: 15px; }
+    .op-main { grid-area: main; background: #000; position: relative; border: 1px solid #222; display: flex; align-items: center; justify-content: center; }
+    .op-footer { grid-area: footer; background: #0d0d0d; border-top: 2px solid #222; padding: 10px; font-size: 12px; color: #aaa; overflow-y: auto; }
+    .op-btn { background: #222; color: #ff3333; border: 1px solid #ff3333; padding: 10px; margin-bottom: 10px; width: 100%; text-align: left; cursor: pointer; font-family: monospace; font-weight: bold; }
+
+    #agent-ui { display: none; position: absolute; top: 10px; left: 10px; z-index: 50; color: #00ff66; pointer-events: none; font-family: monospace; }
+    #joystick-zone { display: none; position: absolute; bottom: 20px; left: 20px; width: 120px; height: 120px; background: rgba(0, 255, 102, 0.05); border: 2px dashed rgba(0, 255, 102, 0.3); border-radius: 50%; z-index: 60; touch-action: none; }
+    #joystick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(0, 255, 102, 0.4); border-radius: 50%; pointer-events: none; }
+    #game-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 10; }
+  </style>
+</head>
+<body>
+
+  <div id="lobby">
+    <h1>☣ OUTBREAK ☣</h1>
+    <p style="font-size: 12px; color: #aaa;">ASYMMETRIC CO-OP HORROR</p>
+    
+    <button id="host-btn" onclick="createRoom()">HOST GAME (Field Agent)</button>
+    <div class="divider"></div>
+    <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4">
+    <button id="join-btn" onclick="joinRoom()">JOIN (Operator)</button>
+    <div id="status">Status: Ready to connect</div>
+  </div>
+
+  <div id="agent-ui">
+    <div style="font-weight: bold; font-size: 16px;">LOCATION: FACILITY CORE</div>
+    <div id="agent-status" style="font-size: 12px; color: #888;">FLASHLIGHT: ACTIVE | ATMOSPHERE: HAZARDOUS</div>
+  </div>
+
+  <div id="joystick-zone"><div id="joystick-knob"></div></div>
+
+  <div id="operator-ui">
+    <div class="op-header">
+      <span>SYSTEM OPERATOR CONSOLE // FACILITY CONTROL</span>
+      <span id="op-link-status" style="color: #00ff66;">● LINK ACTIVE</span>
+    </div>
+    <div class="op-sidebar">
+      <div style="color: #666; font-size: 11px; margin-bottom: 10px;">SECURITY CAMERAS</div>
+      <button class="op-btn" onclick="selectCam(1)">CAM 01: MAIN ENTRANCE</button>
+      <button class="op-btn" onclick="selectCam(2)">CAM 02: DECON AIRLOCK</button>
+      <button class="op-btn" onclick="selectCam(3)">CAM 03: BIO-LAB CORE</button>
+      <div style="color: #666; font-size: 11px; margin: 15px 0 10px 0;">REMOTE OVERRIDES</div>
+      <button class="op-btn" style="border-color: #ffff00; color: #ffff00;" onclick="triggerDoorOverride()">DOOR OVERRIDE [UNLOCKED]</button>
+    </div>
+    <div class="op-main" id="camera-feed-container">
+      <div id="cam-display" style="color: #ff3333; font-size: 16px; text-align: center; font-family: monospace;">[ SELECT A CAMERA FEED ]</div>
+    </div>
+    <div class="op-footer" id="system-logs">
+      <div style="color: #ff3333; font-weight: bold; margin-bottom: 5px;">SYSTEM LOGS:</div>
+      <div>> Connection initialized with Field Agent.</div>
+    </div>
+  </div>
+
+  <div id="game-container"></div>
+  <audio id="remote-audio" autoplay></audio>
+
+  <script>
+    let peer = null, conn = null, userRole = null;
+
+    function makeCode() {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let result = "";
+      for (let i = 0; i < 4; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    function createRoom() {
+      const statusEl = document.getElementById('status');
+      statusEl.innerText = "Initializing PeerJS...";
+
+      if (typeof Peer === 'undefined') {
+        statusEl.innerHTML = "<b style='color:red;'>ERROR: PeerJS library failed to load. Check internet.</b>";
+        return;
+      }
+
+      try {
+        const code = makeCode();
+        statusEl.innerText = "Generating room " + code + "...";
+
+        peer = new Peer('outbreak-v2-' + code.toLowerCase());
+
+        peer.on('open', (id) => {
+          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 22px;">${code}</b><br><span style="color:#aaa;">Share code with Operator!</span>`;
+        });
+
+        peer.on('connection', (connection) => {
+          conn = connection;
+          conn.on('open', () => {
+            setupDataListener();
+            startGame("FIELD_AGENT");
+          });
+        });
+
+        peer.on('error', (err) => {
+          statusEl.innerHTML = "<b style='color:red;'>Peer Error: " + err.type + "</b>";
+        });
+      } catch (e) {
+        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
+      }
     }
 
     function joinRoom() {
-        const input=document.getElementById('join-code').value.trim().toLowerCase();
+      const input = document.getElementById('join-code').value.trim().toUpperCase();
+      const statusEl = document.getElementById('status');
 
-        if (input.length !==4) {
-            alert("Please enter a valid 4-letter room code!");
-            return;
-        }
+      if (input.length !== 4) {
+        alert("Please enter a 4-letter room code!");
+        return;
+      }
 
-        document.getElementById('status').innerText="Connecting to room "+input.toUpperCase()+"...";
-        peer=new Peer();
+      if (typeof Peer === 'undefined') {
+        statusEl.innerHTML = "<b style='color:red;'>ERROR: PeerJS library failed to load.</b>";
+        return;
+      }
 
-        peer.on('open', ()=> {
-                conn=peer.connect('outbreak-' + input);
+      try {
+        statusEl.innerText = "Connecting to " + input + "...";
+        peer = new Peer();
 
-                conn.on('open', ()=> {
-                        setupDataListener();
-                        startGame("OPERATOR");
-                    });
+        peer.on('open', () => {
+          const targetId = 'outbreak-v2-' + input.toLowerCase();
+          conn = peer.connect(targetId);
 
-                peer.on('error', (err)=> {
-                        console.error(err);
-                        document.getElementById('status').innerText="Could not find room code " + input.toUpperCase();
-                    });
-            });
+          conn.on('open', () => {
+            setupDataListener();
+            startGame("OPERATOR");
+          });
+
+          peer.on('error', (err) => {
+            statusEl.innerHTML = "<b style='color:red;'>Could not find room " + input + "</b>";
+          });
+        });
+      } catch (e) {
+        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
+      }
+    }
+
+    function sendGameEvent(type, payload = {}) {
+      if (conn && conn.open) conn.send({ type, payload });
+    }
+
+    function logSystem(msg) {
+      const logs = document.getElementById('system-logs');
+      if (logs) {
+        logs.innerHTML += `<div>> ${msg}</div>`;
+        logs.scrollTop = logs.scrollHeight;
+      }
     }
 
     function setupDataListener() {
-        conn.on('data', (data)=> {
-                console.log("Received data from peer:", data);
-            });
+      conn.on('data', (data) => {
+        if (window.onPeerEvent) window.onPeerEvent(data);
+      });
     }
 
     function startGame(role) {
-        userRole=role;
-        document.getElementById('lobby').style.display='none';
+      userRole = role;
+      document.getElementById('lobby').style.display = 'none';
 
-        const config= {
+      if (role === "OPERATOR") {
+        document.getElementById('operator-ui').style.display = 'grid';
+      } else {
+        document.getElementById('agent-ui').style.display = 'block';
+        document.getElementById('joystick-zone').style.display = 'block';
+        setupJoystick();
+      }
 
-            type: Phaser.AUTO,
-            width: window.innerWidth,
-            height: window.innerHeight,
-            parent: 'game-container',
-            backgroundColor: '#050505',
-            scene: {
-                create: phaserCreate
-            }
-        }
-
-        ;
-        new Phaser.Game(config);
+      const config = {
+        type: Phaser.AUTO,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        parent: 'game-container',
+        backgroundColor: '#000000',
+        physics: { default: 'arcade', arcade: { debug: false } },
+        scene: { create: phaserCreate, update: phaserUpdate }
+      };
+      new Phaser.Game(config);
     }
+
+    let moveVector = { x: 0, y: 0 };
+    function setupJoystick() {
+      const zone = document.getElementById('joystick-zone');
+      const knob = document.getElementById('joystick-knob');
+      let touchId = null, center = { x: 60, y: 60 };
+
+      zone.addEventListener('touchstart', (e) => { touchId = e.changedTouches[0].identifier; });
+      zone.addEventListener('touchmove', (e) => {
+        for (let touch of e.changedTouches) {
+          if (touch.identifier === touchId) {
+            const rect = zone.getBoundingClientRect();
+            let dx = touch.clientX - (rect.left + center.x);
+            let dy = touch.clientY - (rect.top + center.y);
+            let dist = Math.hypot(dx, dy), maxDist = 45;
+            if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+            moveVector.x = dx / maxDist; moveVector.y = dy / maxDist;
+          }
+        }
+      });
+      const resetJoystick = () => { knob.style.transform = `translate(0px, 0px)`; moveVector = { x: 0, y: 0 }; touchId = null; };
+      zone.addEventListener('touchend', resetJoystick);
+      zone.addEventListener('touchcancel', resetJoystick);
+    }
+
+    let agentPlayer, flashlightGraphics, cursors, WASD;
 
     function phaserCreate() {
-        const scene=this;
+      const scene = this;
+      window.onPeerEvent = (data) => {
+        if (data.type === "DOOR_TOGGLE") logSystem("OVERRIDE SIGNAL RECEIVED FROM OPERATOR.");
+        else if (data.type === "AGENT_POS") logSystem(`AGENT TELEMETRY: [X: ${Math.round(data.payload.x)} | Y: ${Math.round(data.payload.y)}]`);
+      };
 
-        if (userRole==="FIELD_AGENT") {
-            scene.add.text(20, 20, "[ FIELD AGENT VIEW ]\n\n- Role: On-site agent\n- Status: Mobile view initialized\n- Direct link established", {
-                fill: '#00ff66', font: '16px monospace'
-            });
+      if (userRole === "FIELD_AGENT") {
+        const w = window.innerWidth, h = window.innerHeight;
+        let grid = scene.add.graphics();
+        grid.lineStyle(1, 0x003311, 0.3);
+        for (let x = 0; x < w; x += 40) grid.lineBetween(x, 0, x, h);
+        for (let y = 0; y < h; y += 40) grid.lineBetween(0, y, w, y);
+
+        agentPlayer = scene.add.circle(w / 2, h / 2, 12, 0x00ff66);
+        scene.physics.add.existing(agentPlayer);
+        agentPlayer.body.setCollideWorldBounds(true);
+
+        flashlightGraphics = scene.add.graphics();
+        cursors = scene.input.keyboard.createCursorKeys();
+        WASD = scene.input.keyboard.addKeys('W,A,S,D');
+      }
     }
 
-    else {
-        scene.add.text(20, 20, "[ OPERATOR CONSOLE ]\n\n- Role: System Operator\n- Status: Terminal connected\n- Monitoring field agent", {
-            fill: '#ff3333', font: '16px monospace'
-        });
-    }
-    }
+    let lastSendTime = 0;
+    function phaserUpdate(time) {
+      if (userRole !== "FIELD_AGENT" || !agentPlayer) return;
+      let vx = moveVector.x, vy = moveVector.y;
+      if (cursors.left.isDown || WASD.A.isDown) vx = -1;
+      if (cursors.right.isDown || WASD.D.isDown) vx = 1;
+      if (cursors.up.isDown || WASD.W.isDown) vy = -1;
+      if (cursors.down.isDown || WASD.S.isDown) vy = 1;
 
-    </script></body></html>
-    }
+      agentPlayer.body.setVelocity(vx * 160, vy * 160);
 
-    body {
-        margin: 0;
-        padding: 0;
-        background: #080808;
-        color: #00ff66;
-        font-family: 'Courier New', Courier, monospace;
-        text-align: center;
-        overflow: hidden;
-    }
+      flashlightGraphics.clear();
+      flashlightGraphics.fillStyle(0x000000, 0.94);
+      flashlightGraphics.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    #lobby {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 10;
-        background: rgba(10, 15, 10, 0.95);
-        padding: 30px;
-        border: 2px solid #00ff66;
-        border-radius: 8px;
-        box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
-        width: 90%;
-        max-width: 400px;
+      let angle = Math.atan2(vy, vx);
+      if (vx === 0 && vy === 0) angle = -Math.PI / 2;
+      let flickerRadius = 180 + Math.sin(time / 50) * 8 + Math.random() * 4;
+
+      flashlightGraphics.fillStyle(0xffffaa, 0.25);
+      flashlightGraphics.beginPath();
+      flashlightGraphics.moveTo(agentPlayer.x, agentPlayer.y);
+      flashlightGraphics.arc(agentPlayer.x, agentPlayer.y, flickerRadius, angle - 0.4, angle + 0.4, false);
+      flashlightGraphics.lineTo(agentPlayer.x, agentPlayer.y);
+      flashlightGraphics.closePath();
+      flashlightGraphics.fillPath();
+
+      if (time - lastSendTime > 200) {
+        sendGameEvent("AGENT_POS", { x: agentPlayer.x, y: agentPlayer.y });
+        lastSendTime = time;
+      }
     }
 
-    h1 {
-        margin-top: 0;
-        font-size: 22px;
-        text-transform: uppercase;
-        letter-spacing: 2px;
+    function selectCam(camNum) {
+      document.getElementById('cam-display').innerHTML = `<div style="border: 1px red solid; padding: 40px; background: rgba(205,0,0,0.1);">FEED LIVE: CAMERA 0${camNum}<br><br><span style="font-size: 12px; color: #aaa;">SCANNING FOR BIOLOGICAL MUTATIONS...</span></div>`;
+      logSystem(`Switched feed to Security Camera 0${camNum}`);
     }
 
-    button {
-        background: #00ff66;
-        color: #000;
-        font-weight: bold;
-        padding: 12px 20px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin: 8px 0;
-        width: 100%;
-        font-size: 14px;
-        text-transform: uppercase;
+    function triggerDoorOverride() {
+      sendGameEvent("DOOR_TOGGLE", { timestamp: Date.now() });
+      logSystem("Transmitted door unlock signal to Field Agent.");
     }
-
-    button:active {
-        background: #00cc52;
-    }
-
-    input {
-        padding: 12px;
-        text-align: center;
-        font-size: 16px;
-        width: 100%;
-        background: #111;
-        border: 1px solid #00ff66;
-        color: #00ff66;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-    }
-
-    .divider {
-        margin: 15px 0;
-        border-top: 1px dashed #00ff66;
-        opacity: 0.4;
-    }
-
-    #status {
-        font-size: 13px;
-        color: #888;
-        margin-top: 15px;
-        word-break: break-all;
-    }
-</style>
-</head>
-
-<body>
-
-    <div id="lobby">
-        <h1>☣ OUTBREAK ☣</h1>
-        <p style="font-size: 12px; color: #aaa;">ASYMMETRIC CO-OP HORROR</p>
-
-        <button onclick="createRoom()">HOST GAME (Field Agent)</button>
-
-        <div class="divider"></div>
-
-        <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4">
-        <button onclick="joinRoom()">JOIN (Operator)</button>
-
-        <div id="status">Status: Ready to connect</div>
-    </div>
-
-    <div id="game-container"></div>
-
-    <script>
-        let peer, conn, userRole = null;
-
-        // Helper to generate a 4-letter clean room code
-        function makeCode() {
-            const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-            let result = "";
-            for (let i = 0; i < 4; i++) {
-                result += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            return result;
-        }
-
-        function createRoom() {
-            const code = makeCode();
-            document.getElementById('status').innerText = "Creating room...";
-
-            // Initialize Peer with specific room code
-            peer = new Peer('outbreak-' + code.toLowerCase());
-
-            peer.on('open', () => {
-                document.getElementById('status').innerText = "ROOM CODE: " + code + "\nWaiting for Operator to join...";
-            });
-
-            peer.on('connection', (connection) => {
-                conn = connection;
-                setupDataListener();
-                startGame("FIELD_AGENT");
-            });
-
-            peer.on('error', (err) => {
-                console.error(err);
-                document.getElementById('status').innerText = "Error creating room. Try again.";
-            });
-        }
-
-        function joinRoom() {
-            const input = document.getElementById('join-code').value.trim().toLowerCase();
-            if (input.length !== 4) {
-                alert("Please enter a valid 4-letter room code!");
-                return;
-            }
-
-            document.getElementById('status').innerText = "Connecting to room " + input.toUpperCase() + "...";
-            peer = new Peer();
-
-            peer.on('open', () => {
-                conn = peer.connect('outbreak-' + input);
-
-                conn.on('open', () => {
-                    setupDataListener();
-                    startGame("OPERATOR");
-                });
-
-                peer.on('error', (err) => {
-                    console.error(err);
-                    document.getElementById('status').innerText = "Could not find room code " + input.toUpperCase();
-                });
-            });
-        }
-
-        function setupDataListener() {
-            conn.on('data', (data) => {
-                console.log("Received data from peer:", data);
-            });
-        }
-
-        function startGame(role) {
-            userRole = role;
-            document.getElementById('lobby').style.display = 'none';
-
-            const config = {
-                type: Phaser.AUTO,
-                width: window.innerWidth,
-                height: window.innerHeight,
-                parent: 'game-container',
-                backgroundColor: '#050505',
-                scene: { create: phaserCreate }
-            };
-            new Phaser.Game(config);
-        }
-
-        function phaserCreate() {
-            const scene = this;
-            if (userRole === "FIELD_AGENT") {
-                scene.add.text(20, 20, "[ FIELD AGENT VIEW ]\n\n- Role: On-site agent\n- Status: Mobile view initialized\n- Direct link established", { fill: '#00ff66', font: '16px monospace' });
-            } else {
-                scene.add.text(20, 20, "[ OPERATOR CONSOLE ]\n\n- Role: System Operator\n- Status: Terminal connected\n- Monitoring field agent", { fill: '#ff3333', font: '16px monospace' });
-            }
-        }
-    </script>
+  </script>
 </body>
-
 </html>
-<!DOCTYPE html>
-<html lang="en">
