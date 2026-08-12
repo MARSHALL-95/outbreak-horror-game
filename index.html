@@ -7,7 +7,7 @@
 
   <!-- Open Source Libraries via CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 
   <style>
     * { box-sizing: border-box; user-select: none; }
@@ -110,8 +110,7 @@
   <div id="game-container"></div>
 
   <script>
-    let mqttClient = null, roomTopic = null, userRole = null;
-    let clientId = 'client_' + Math.random().toString(16).substr(2, 8);
+    let peer = null, conn = null, userRole = null;
 
     function makeCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -122,72 +121,90 @@
       return result;
     }
 
-    function initMqtt(topic, onConnectCallback) {
-      document.getElementById('status').innerText = "Connecting to WebSocket Relay...";
-      roomTopic = 'outbreak/game/' + topic.toLowerCase();
-
-      // Free public secure WebSocket broker
-      mqttClient = mqtt.connect('wss://broker.hivemq.com:8004/mqtt', { clientId: clientId });
-
-      mqttClient.on('connect', () => {
-        mqttClient.subscribe(roomTopic, (err) => {
-          if (!err) onConnectCallback();
-        });
-      });
-
-      mqttClient.on('message', (topic, message) => {
-        try {
-          const data = JSON.parse(message.toString());
-          // Ignore own messages
-          if (data.sender === clientId) return;
-
-          if (data.type === "JOIN_PULSE" && userRole === "FIELD_AGENT") {
-            // Field Agent replies to handshake
-            sendGameEvent("HOST_ACK", {});
-          } else if (data.type === "HOST_ACK" && userRole === "OPERATOR_WAITING") {
-            startGame("OPERATOR");
-          } else if (window.onPeerEvent) {
-            window.onPeerEvent(data);
-          }
-        } catch(e) {}
-      });
-
-      mqttClient.on('error', (err) => {
-        document.getElementById('status').innerHTML = "<b style='color:red;'>Relay Connection Error. Retry.</b>";
-      });
-    }
-
     function createRoom() {
-      const code = makeCode();
-      userRole = "FIELD_AGENT";
+      const statusEl = document.getElementById('status');
+      statusEl.innerText = "Initializing Host Room...";
 
-      initMqtt(code, () => {
-        document.getElementById('status').innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${code}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
-        // Auto start Host after relay is active
-        setTimeout(() => startGame("FIELD_AGENT"), 800);
-      });
+      const code = makeCode();
+      const hostPeerId = 'ob-room-' + code.toLowerCase();
+
+      try {
+        peer = new Peer(hostPeerId, {
+          config: {
+            'iceServers': [
+              { 'urls': 'stun:stun.l.google.com:19302' },
+              { 'urls': 'stun:stun1.l.google.com:19302' },
+              { 'urls': 'stun:stun2.l.google.com:19302' }
+            ]
+          }
+        });
+
+        peer.on('open', (id) => {
+          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${code}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
+        });
+
+        peer.on('connection', (connection) => {
+          conn = connection;
+          conn.on('open', () => {
+            setupDataListener();
+            startGame("FIELD_AGENT");
+          });
+        });
+
+        peer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            createRoom(); // Retry with fresh code if room taken
+          } else {
+            statusEl.innerHTML = "<b style='color:red;'>Initialization Error: " + err.type + "</b>";
+          }
+        });
+      } catch (e) {
+        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
+      }
     }
 
     function joinRoom() {
-      const input = document.getElementById('join-code').value.trim().toUpperCase();
+      const input = document.getElementById('join-code').value.trim().toLowerCase();
+      const statusEl = document.getElementById('status');
+
       if (input.length !== 4) {
         alert("Please enter a valid 4-letter room code!");
         return;
       }
 
-      userRole = "OPERATOR_WAITING";
-      initMqtt(input, () => {
-        document.getElementById('status').innerText = "Joining Room " + input + "...";
-        sendGameEvent("JOIN_PULSE", {});
-        setTimeout(() => startGame("OPERATOR"), 500);
-      });
+      statusEl.innerText = "Connecting to Room " + input.toUpperCase() + "...";
+
+      try {
+        peer = new Peer({
+          config: {
+            'iceServers': [
+              { 'urls': 'stun:stun.l.google.com:19302' },
+              { 'urls': 'stun:stun1.l.google.com:19302' },
+              { 'urls': 'stun:stun2.l.google.com:19302' }
+            ]
+          }
+        });
+
+        peer.on('open', () => {
+          const targetHostId = 'ob-room-' + input;
+          conn = peer.connect(targetHostId, { reliable: true });
+
+          conn.on('open', () => {
+            setupDataListener();
+            startGame("OPERATOR");
+          });
+
+          peer.on('error', (err) => {
+            statusEl.innerHTML = "<b style='color:red;'>Room " + input.toUpperCase() + " not found or inactive.</b>";
+          });
+        });
+      } catch (e) {
+        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
+      }
     }
 
     function sendGameEvent(type, payload = {}) {
-      if (mqttClient && mqttClient.connected) {
-        const msg = JSON.stringify({ sender: clientId, type: type, payload: payload });
-        mqttClient.publish(roomTopic, msg);
-      }
+      if (conn && conn.open) conn.send({ type, payload });
     }
 
     function logSystem(msg) {
@@ -198,8 +215,15 @@
       }
     }
 
+    function setupDataListener() {
+      if (conn) {
+        conn.on('data', (data) => {
+          if (window.onPeerEvent) window.onPeerEvent(data);
+        });
+      }
+    }
+
     function startGame(role) {
-      if (document.getElementById('lobby').style.display === 'none') return;
       userRole = role;
       document.getElementById('lobby').style.display = 'none';
 
