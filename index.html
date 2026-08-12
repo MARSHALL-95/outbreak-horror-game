@@ -110,7 +110,7 @@
   <div id="game-container"></div>
 
   <script>
-    let peer = null, conn = null, roomCode = null, userRole = null, channel = null;
+    let peer = null, conn = null, roomCode = null, userRole = null;
 
     function makeCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -121,35 +121,22 @@
       return result;
     }
 
-    function setupBroadcastChannel(code) {
-      channel = new BroadcastChannel('outbreak_room_' + code);
-      channel.onmessage = (e) => {
-        if (e.data.type === "OPERATOR_JOINED" && userRole === null) {
-          startGame("FIELD_AGENT");
-        } else if (e.data.type === "GAME_EVENT" && window.onPeerEvent) {
-          window.onPeerEvent(e.data.payload);
-        }
-      };
-    }
-
     function createRoom() {
       roomCode = makeCode();
       const statusEl = document.getElementById('status');
       statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to join...</span>`;
-      
-      setupBroadcastChannel(roomCode);
 
-      // WebRTC PeerJS Host Listener for cross-device support
-      try {
-        peer = new Peer('obhost-' + roomCode.toLowerCase());
-        peer.on('connection', (connection) => {
-          conn = connection;
-          conn.on('open', () => {
-            setupDataListener();
-            if (userRole === null) startGame("FIELD_AGENT");
-          });
-        });
-      } catch (err) { console.log("WebRTC init error:", err); }
+      const targetId = 'outbreak-' + roomCode.toLowerCase();
+      peer = new Peer(targetId);
+
+      peer.on('connection', (c) => {
+        conn = c;
+        bindConnection();
+      });
+
+      peer.on('error', (err) => {
+        statusEl.innerHTML = "<b style='color:red;'>Connection Error. Please tap Host again.</b>";
+      });
     }
 
     function joinRoom() {
@@ -160,25 +147,49 @@
       }
 
       roomCode = input;
-      setupBroadcastChannel(roomCode);
+      document.getElementById('status').innerText = "Connecting to " + input + "...";
 
-      // Ping via BroadcastChannel (for same-browser multi-tab)
-      channel.postMessage({ type: "OPERATOR_JOINED" });
+      peer = new Peer();
+      peer.on('open', () => {
+        const targetId = 'outbreak-' + input.toLowerCase();
+        conn = peer.connect(targetId);
+        bindConnection();
+      });
 
-      // Connect via WebRTC PeerJS (for mobile-to-desktop cross-device)
-      try {
-        peer = new Peer();
-        peer.on('open', () => {
-          conn = peer.connect('obhost-' + input.toLowerCase());
-          conn.on('open', () => setupDataListener());
-        });
-      } catch (err) { console.log("WebRTC connect error:", err); }
+      peer.on('error', () => {
+        document.getElementById('status').innerHTML = "<b style='color:red;'>Room " + input + " not found.</b>";
+      });
+    }
 
-      startGame("OPERATOR");
+    function bindConnection() {
+      if (!conn) return;
+
+      conn.on('open', () => {
+        if (userRole === null) {
+          // If we initiated join, we are Operator; if we accepted connection, we are Field Agent
+          const role = (peer && peer.id && peer.id.startsWith('outbreak-')) ? "FIELD_AGENT" : "OPERATOR";
+          startGame(role);
+        }
+      });
+
+      conn.on('data', (data) => {
+        if (data.type === "START_SYNC" && userRole === null) {
+          startGame("FIELD_AGENT");
+        } else if (window.onPeerEvent) {
+          window.onPeerEvent(data);
+        }
+      });
+
+      // Send immediate handshake sync
+      let syncInterval = setInterval(() => {
+        if (conn && conn.open) {
+          conn.send({ type: "START_SYNC" });
+          if (userRole !== null) clearInterval(syncInterval);
+        }
+      }, 300);
     }
 
     function sendGameEvent(type, payload = {}) {
-      if (channel) channel.postMessage({ type: "GAME_EVENT", payload: { type, payload } });
       if (conn && conn.open) conn.send({ type, payload });
     }
 
@@ -187,14 +198,6 @@
       if (logs) {
         logs.innerHTML += `<div>> ${msg}</div>`;
         logs.scrollTop = logs.scrollHeight;
-      }
-    }
-
-    function setupDataListener() {
-      if (conn) {
-        conn.on('data', (data) => {
-          if (window.onPeerEvent) window.onPeerEvent(data);
-        });
       }
     }
 
