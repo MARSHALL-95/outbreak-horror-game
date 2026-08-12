@@ -7,7 +7,6 @@
 
   <!-- Open Source Libraries via CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 
   <style>
     * { box-sizing: border-box; user-select: none; }
@@ -110,7 +109,7 @@
   <div id="game-container"></div>
 
   <script>
-    let peer = null, conn = null, userRole = null;
+    let roomCode = null, userRole = null, channel = null;
 
     function makeCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -122,88 +121,52 @@
     }
 
     function createRoom() {
+      roomCode = makeCode();
       const statusEl = document.getElementById('status');
-      statusEl.innerText = "Connecting to signaling server...";
+      
+      statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to join...</span>`;
+      
+      setupChannel(roomCode);
 
-      if (typeof Peer === 'undefined') {
-        statusEl.innerHTML = "<b style='color:red;'>ERROR: PeerJS failed to load. Check connection.</b>";
-        return;
-      }
-
-      const code = makeCode();
-      const hostPeerId = 'outbreak-net-' + code.toLowerCase();
-
-      try {
-        peer = new Peer(hostPeerId, {
-          config: {
-            'iceServers': [
-              { 'urls': 'stun:stun.l.google.com:19302' },
-              { 'urls': 'stun:stun1.l.google.com:19302' }
-            ]
-          }
-        });
-
-        peer.on('open', (id) => {
-          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${code}</b><br><span style="color:#aaa;">Waiting for Operator to enter code on laptop...</span>`;
-        });
-
-        peer.on('connection', (connection) => {
-          conn = connection;
-          conn.on('open', () => {
-            setupDataListener();
-            startGame("FIELD_AGENT");
-          });
-        });
-
-        peer.on('error', (err) => {
-          statusEl.innerHTML = "<b style='color:red;'>Connection Error: " + err.type + ". Try Host again.</b>";
-        });
-      } catch (e) {
-        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
-      }
+      // Listen for operator join ping
+      channel.onmessage = (e) => {
+        if (e.data.type === "OPERATOR_JOINED" && userRole === null) {
+          startGame("FIELD_AGENT");
+        } else if (e.data.type === "GAME_EVENT" && window.onPeerEvent) {
+          window.onPeerEvent(e.data.payload);
+        }
+      };
     }
 
     function joinRoom() {
-      const input = document.getElementById('join-code').value.trim().toLowerCase();
-      const statusEl = document.getElementById('status');
-
+      const input = document.getElementById('join-code').value.trim().toUpperCase();
       if (input.length !== 4) {
         alert("Please enter a valid 4-letter room code!");
         return;
       }
 
-      statusEl.innerText = "Connecting to Room " + input.toUpperCase() + "...";
+      roomCode = input;
+      setupChannel(roomCode);
 
-      try {
-        peer = new Peer({
-          config: {
-            'iceServers': [
-              { 'urls': 'stun:stun.l.google.com:19302' },
-              { 'urls': 'stun:stun1.l.google.com:19302' }
-            ]
-          }
-        });
+      channel.onmessage = (e) => {
+        if (e.data.type === "GAME_EVENT" && window.onPeerEvent) {
+          window.onPeerEvent(e.data.payload);
+        }
+      };
 
-        peer.on('open', () => {
-          const targetHostId = 'outbreak-net-' + input;
-          conn = peer.connect(targetHostId, { reliable: true });
+      // Broadcast join ping to Host
+      channel.postMessage({ type: "OPERATOR_JOINED" });
+      startGame("OPERATOR");
+    }
 
-          conn.on('open', () => {
-            setupDataListener();
-            startGame("OPERATOR");
-          });
-
-          peer.on('error', (err) => {
-            statusEl.innerHTML = "<b style='color:red;'>Room " + input.toUpperCase() + " not found or inactive.</b>";
-          });
-        });
-      } catch (e) {
-        statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
-      }
+    function setupChannel(code) {
+      channel = new BroadcastChannel('outbreak_room_' + code);
     }
 
     function sendGameEvent(type, payload = {}) {
-      if (conn && conn.open) conn.send({ type, payload });
+      if (channel) {
+        channel.postMessage({ type: "GAME_EVENT", payload: { type, payload } });
+      }
     }
 
     function logSystem(msg) {
@@ -211,14 +174,6 @@
       if (logs) {
         logs.innerHTML += `<div>> ${msg}</div>`;
         logs.scrollTop = logs.scrollHeight;
-      }
-    }
-
-    function setupDataListener() {
-      if (conn) {
-        conn.on('data', (data) => {
-          if (window.onPeerEvent) window.onPeerEvent(data);
-        });
       }
     }
 
