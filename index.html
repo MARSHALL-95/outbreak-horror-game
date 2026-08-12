@@ -126,16 +126,24 @@
       const statusEl = document.getElementById('status');
       statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to join...</span>`;
 
-      const targetId = 'outbreak-' + roomCode.toLowerCase();
-      peer = new Peer(targetId);
+      const targetId = 'outbreak-p2p-' + roomCode.toLowerCase();
+      peer = new Peer(targetId, {
+        config: {
+          'iceServers': [
+            { 'urls': 'stun:stun.l.google.com:19302' },
+            { 'urls': 'stun:stun1.l.google.com:19302' },
+            { 'urls': 'stun:stun2.l.google.com:19302' }
+          ]
+        }
+      });
 
       peer.on('connection', (c) => {
         conn = c;
-        bindConnection();
+        bindEvents("FIELD_AGENT");
       });
 
       peer.on('error', (err) => {
-        statusEl.innerHTML = "<b style='color:red;'>Connection Error. Please tap Host again.</b>";
+        statusEl.innerHTML = "<b style='color:red;'>Connection Error. Tap Host again.</b>";
       });
     }
 
@@ -147,13 +155,22 @@
       }
 
       roomCode = input;
-      document.getElementById('status').innerText = "Connecting to " + input + "...";
+      document.getElementById('status').innerText = "Connecting to Room " + input + "...";
 
-      peer = new Peer();
+      peer = new Peer({
+        config: {
+          'iceServers': [
+            { 'urls': 'stun:stun.l.google.com:19302' },
+            { 'urls': 'stun:stun1.l.google.com:19302' },
+            { 'urls': 'stun:stun2.l.google.com:19302' }
+          ]
+        }
+      });
+
       peer.on('open', () => {
-        const targetId = 'outbreak-' + input.toLowerCase();
-        conn = peer.connect(targetId);
-        bindConnection();
+        const targetId = 'outbreak-p2p-' + input.toLowerCase();
+        conn = peer.connect(targetId, { reliable: true });
+        bindEvents("OPERATOR");
       });
 
       peer.on('error', () => {
@@ -161,32 +178,16 @@
       });
     }
 
-    function bindConnection() {
+    function bindEvents(assignedRole) {
       if (!conn) return;
 
       conn.on('open', () => {
-        if (userRole === null) {
-          // If we initiated join, we are Operator; if we accepted connection, we are Field Agent
-          const role = (peer && peer.id && peer.id.startsWith('outbreak-')) ? "FIELD_AGENT" : "OPERATOR";
-          startGame(role);
-        }
+        startGame(assignedRole);
       });
 
       conn.on('data', (data) => {
-        if (data.type === "START_SYNC" && userRole === null) {
-          startGame("FIELD_AGENT");
-        } else if (window.onPeerEvent) {
-          window.onPeerEvent(data);
-        }
+        if (window.onPeerEvent) window.onPeerEvent(data);
       });
-
-      // Send immediate handshake sync
-      let syncInterval = setInterval(() => {
-        if (conn && conn.open) {
-          conn.send({ type: "START_SYNC" });
-          if (userRole !== null) clearInterval(syncInterval);
-        }
-      }, 300);
     }
 
     function sendGameEvent(type, payload = {}) {
