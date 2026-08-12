@@ -1,171 +1,170 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>DEADLINE: Outbreak</title>
-    <!-- Open Source Libraries via Free CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <style>
-        * {
-            box-sizing: border-box;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>DEADLINE: Outbreak</title>
+<!-- Open Source Libraries via Free CDN -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script src="https://unpkg.com/peerjs@5.5.2/dist/peerjs.min.js"></script>
+<style>
+    * {
+        box-sizing: border-box;
 
-            peer.on('error', (err)=> {
-                    console.error(err);
-                    document.getElementById('status').innerText="Error creating room. Try again.";
-                });
-        }
-
-        function joinRoom() {
-            const input=document.getElementById('join-code').value.trim().toLowerCase();
-
-            if (input.length !==4) {
-                alert("Please enter a valid 4-letter room code!");
-                return;
-            }
-
-            document.getElementById('status').innerText="Connecting to room "+input.toUpperCase()+"...";
-            peer=new Peer();
-
-            peer.on('open', ()=> {
-                    conn=peer.connect('outbreak-' + input);
-
-                    conn.on('open', ()=> {
-                            setupDataListener();
-                            startGame("OPERATOR");
-                        });
-
-                    peer.on('error', (err)=> {
-                            console.error(err);
-                            document.getElementById('status').innerText="Could not find room code " + input.toUpperCase();
-                        });
-                });
-        }
-
-        function setupDataListener() {
-            conn.on('data', (data)=> {
-                    console.log("Received data from peer:", data);
-                });
-        }
-
-        function startGame(role) {
-            userRole=role;
-            document.getElementById('lobby').style.display='none';
-
-            const config= {
-
-                type: Phaser.AUTO,
-                width: window.innerWidth,
-                height: window.innerHeight,
-                parent: 'game-container',
-                backgroundColor: '#050505',
-                scene: {
-                    create: phaserCreate
-                }
-            }
-
-            ;
-            new Phaser.Game(config);
-        }
-
-        function phaserCreate() {
-            const scene=this;
-
-            if (userRole==="FIELD_AGENT") {
-                scene.add.text(20, 20, "[ FIELD AGENT VIEW ]\n\n- Role: On-site agent\n- Status: Mobile view initialized\n- Direct link established", {
-                    fill: '#00ff66', font: '16px monospace'
-                });
-        }
-
-        else {
-            scene.add.text(20, 20, "[ OPERATOR CONSOLE ]\n\n- Role: System Operator\n- Status: Terminal connected\n- Monitoring field agent", {
-                fill: '#ff3333', font: '16px monospace'
+        peer.on('error', (err)=> {
+                console.error(err);
+                document.getElementById('status').innerText="Error creating room. Try again.";
             });
-        }
+    }
+
+    function joinRoom() {
+        const input=document.getElementById('join-code').value.trim().toLowerCase();
+
+        if (input.length !==4) {
+            alert("Please enter a valid 4-letter room code!");
+            return;
         }
 
-        </script></body></html>
+        document.getElementById('status').innerText="Connecting to room "+input.toUpperCase()+"...";
+        peer=new Peer();
+
+        peer.on('open', ()=> {
+                conn=peer.connect('outbreak-' + input);
+
+                conn.on('open', ()=> {
+                        setupDataListener();
+                        startGame("OPERATOR");
+                    });
+
+                peer.on('error', (err)=> {
+                        console.error(err);
+                        document.getElementById('status').innerText="Could not find room code " + input.toUpperCase();
+                    });
+            });
+    }
+
+    function setupDataListener() {
+        conn.on('data', (data)=> {
+                console.log("Received data from peer:", data);
+            });
+    }
+
+    function startGame(role) {
+        userRole=role;
+        document.getElementById('lobby').style.display='none';
+
+        const config= {
+
+            type: Phaser.AUTO,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            parent: 'game-container',
+            backgroundColor: '#050505',
+            scene: {
+                create: phaserCreate
+            }
         }
 
-        body {
-            margin: 0;
-            padding: 0;
-            background: #080808;
-            color: #00ff66;
-            font-family: 'Courier New', Courier, monospace;
-            text-align: center;
-            overflow: hidden;
-        }
+        ;
+        new Phaser.Game(config);
+    }
 
-        #lobby {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 10;
-            background: rgba(10, 15, 10, 0.95);
-            padding: 30px;
-            border: 2px solid #00ff66;
-            border-radius: 8px;
-            box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
-            width: 90%;
-            max-width: 400px;
-        }
+    function phaserCreate() {
+        const scene=this;
 
-        h1 {
-            margin-top: 0;
-            font-size: 22px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
+        if (userRole==="FIELD_AGENT") {
+            scene.add.text(20, 20, "[ FIELD AGENT VIEW ]\n\n- Role: On-site agent\n- Status: Mobile view initialized\n- Direct link established", {
+                fill: '#00ff66', font: '16px monospace'
+            });
+    }
 
-        button {
-            background: #00ff66;
-            color: #000;
-            font-weight: bold;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 8px 0;
-            width: 100%;
-            font-size: 14px;
-            text-transform: uppercase;
-        }
+    else {
+        scene.add.text(20, 20, "[ OPERATOR CONSOLE ]\n\n- Role: System Operator\n- Status: Terminal connected\n- Monitoring field agent", {
+            fill: '#ff3333', font: '16px monospace'
+        });
+    }
+    }
 
-        button:active {
-            background: #00cc52;
-        }
+    </script></body></html>
+    }
 
-        input {
-            padding: 12px;
-            text-align: center;
-            font-size: 16px;
-            width: 100%;
-            background: #111;
-            border: 1px solid #00ff66;
-            color: #00ff66;
-            border-radius: 4px;
-            margin-bottom: 8px;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-        }
+    body {
+        margin: 0;
+        padding: 0;
+        background: #080808;
+        color: #00ff66;
+        font-family: 'Courier New', Courier, monospace;
+        text-align: center;
+        overflow: hidden;
+    }
 
-        .divider {
-            margin: 15px 0;
-            border-top: 1px dashed #00ff66;
-            opacity: 0.4;
-        }
+    #lobby {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 10;
+        background: rgba(10, 15, 10, 0.95);
+        padding: 30px;
+        border: 2px solid #00ff66;
+        border-radius: 8px;
+        box-shadow: 0 0 20px rgba(0, 255, 102, 0.2);
+        width: 90%;
+        max-width: 400px;
+    }
 
-        #status {
-            font-size: 13px;
-            color: #888;
-            margin-top: 15px;
-            word-break: break-all;
-        }
-    </style>
+    h1 {
+        margin-top: 0;
+        font-size: 22px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+
+    button {
+        background: #00ff66;
+        color: #000;
+        font-weight: bold;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 8px 0;
+        width: 100%;
+        font-size: 14px;
+        text-transform: uppercase;
+    }
+
+    button:active {
+        background: #00cc52;
+    }
+
+    input {
+        padding: 12px;
+        text-align: center;
+        font-size: 16px;
+        width: 100%;
+        background: #111;
+        border: 1px solid #00ff66;
+        color: #00ff66;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+    }
+
+    .divider {
+        margin: 15px 0;
+        border-top: 1px dashed #00ff66;
+        opacity: 0.4;
+    }
+
+    #status {
+        font-size: 13px;
+        color: #888;
+        margin-top: 15px;
+        word-break: break-all;
+    }
+</style>
 </head>
 
 <body>
@@ -174,7 +173,7 @@
         <h1>☣ OUTBREAK ☣</h1>
         <p style="font-size: 12px; color: #aaa;">ASYMMETRIC CO-OP HORROR</p>
 
-        <button onclick="createRoom()">HOST GAME (Field Agent)</button>
+        <button onclick="createRo<head>om()">HOST GAME (Field Agent)</button>
 
         <div class="divider"></div>
 
@@ -280,3 +279,5 @@
 </body>
 
 </html>
+<!DOCTYPE html>
+<html lang="en">
