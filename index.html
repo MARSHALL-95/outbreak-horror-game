@@ -136,19 +136,24 @@
       setupBroadcastChannel(code);
       statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 24px;">${code}</b><br><span style="color:#aaa;">Enter code on Operator device!</span>`;
 
-      // Try setting up WebRTC in background
+      // Reliable PeerJS initialization using custom TURN/STUN servers
       try {
-        peer = new Peer('outbreak-room-' + code.toLowerCase());
+        peer = new Peer('outbreak-host-' + code.toLowerCase(), {
+          config: {'iceServers': [
+            { 'urls': 'stun:stun.l.google.com:19302' },
+            { 'urls': 'stun:stun1.l.google.com:19302' }
+          ]}
+        });
+
         peer.on('connection', (connection) => {
           conn = connection;
           conn.on('open', () => setupDataListener());
         });
       } catch (e) {
-        console.log("WebRTC fallback active.");
+        console.log("Using BroadcastChannel fallback.");
       }
 
-      // Auto start Agent view
-      setTimeout(() => startGame("FIELD_AGENT"), 1500);
+      startGame("FIELD_AGENT");
     }
 
     function joinRoom() {
@@ -164,17 +169,22 @@
       setupBroadcastChannel(input);
 
       try {
-        peer = new Peer();
+        peer = new Peer({
+          config: {'iceServers': [
+            { 'urls': 'stun:stun.l.google.com:19302' },
+            { 'urls': 'stun:stun1.l.google.com:19302' }
+          ]}
+        });
+
         peer.on('open', () => {
-          conn = peer.connect('outbreak-room-' + input);
+          conn = peer.connect('outbreak-host-' + input);
           conn.on('open', () => setupDataListener());
         });
       } catch (e) {
-        console.log("WebRTC fallback active.");
+        console.log("Using BroadcastChannel fallback.");
       }
 
-      // Auto start Operator view
-      setTimeout(() => startGame("OPERATOR"), 500);
+      startGame("OPERATOR");
     }
 
     function sendGameEvent(type, payload = {}) {
