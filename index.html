@@ -80,7 +80,7 @@
 
   <div id="agent-ui">
     <div style="font-weight: bold; font-size: 16px;">LOCATION: FACILITY CORE</div>
-    <div id="agent-status" style="font-size: 12px; color: #888;">FLASHLIGHT: ACTIVE | ATMOSPHERE: HAZARDOUS</div>
+    <div id="agent-status" style="font-size: 12px; color: #ff3333;">ALERT: INFECTED SPECIMENS DETECTED</div>
   </div>
 
   <div id="joystick-zone"><div id="joystick-knob"></div></div>
@@ -108,7 +108,6 @@
   </div>
 
   <div id="game-container"></div>
-  <audio id="remote-audio" autoplay></audio>
 
   <script>
     let peer = null, conn = null, userRole = null;
@@ -133,19 +132,12 @@
 
       try {
         const code = makeCode();
-        // Dynamic Room Prefix to prevent collision hangs
         const roomPeerId = 'ob-' + code.toLowerCase() + '-' + Math.floor(Math.random() * 1000);
         
-        peer = new Peer(roomPeerId, {
-          debug: 1
-        });
-
-        // Save session room code mapping
-        window.activeRoomCode = code;
-        window.activeRoomPeerId = roomPeerId;
+        peer = new Peer(roomPeerId, { debug: 1 });
 
         peer.on('open', (id) => {
-          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 24px;">${code}</b><br><span style="color:#aaa;">Enter this 4-letter code on the Operator device!</span>`;
+          statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 24px;">${code}</b><br><span style="color:#aaa;">Enter code on Operator device!</span>`;
         });
 
         peer.on('connection', (connection) => {
@@ -157,8 +149,7 @@
         });
 
         peer.on('error', (err) => {
-          console.error(err);
-          statusEl.innerHTML = "<b style='color:red;'>Peer Connection Error: " + err.type + ". Click Host again.</b>";
+          statusEl.innerHTML = "<b style='color:red;'>Peer Connection Error. Click Host again.</b>";
         });
       } catch (e) {
         statusEl.innerHTML = "<b style='color:red;'>Script Error: " + e.message + "</b>";
@@ -184,10 +175,6 @@
         peer = new Peer({ debug: 1 });
 
         peer.on('open', () => {
-          // Attempt connecting via prefix matching
-          let connected = false;
-          
-          // Connect to target host
           peer.listAllPeers((peers) => {
             const target = peers.find(p => p.startsWith('ob-' + input));
             const targetId = target || ('ob-' + input);
@@ -201,7 +188,6 @@
 
             setTimeout(() => {
               if (!conn || !conn.open) {
-                // Direct fallback attempt
                 conn = peer.connect('ob-' + input);
                 conn.on('open', () => {
                   setupDataListener();
@@ -287,25 +273,46 @@
       zone.addEventListener('touchcancel', resetJoystick);
     }
 
-    let agentPlayer, flashlightGraphics, cursors, WASD;
+    let agentPlayer, flashlightGraphics, walls, zombie, cursors, WASD;
 
     function phaserCreate() {
       const scene = this;
       window.onPeerEvent = (data) => {
         if (data.type === "DOOR_TOGGLE") logSystem("OVERRIDE SIGNAL RECEIVED FROM OPERATOR.");
         else if (data.type === "AGENT_POS") logSystem(`AGENT TELEMETRY: [X: ${Math.round(data.payload.x)} | Y: ${Math.round(data.payload.y)}]`);
+        else if (data.type === "ZOMBIE_WARN") logSystem(`<span style="color:red;">⚠ WARNING: INFECTED MUTANT NEAR AGENT!</span>`);
       };
 
       if (userRole === "FIELD_AGENT") {
         const w = window.innerWidth, h = window.innerHeight;
+
+        // Grid Floor
         let grid = scene.add.graphics();
         grid.lineStyle(1, 0x003311, 0.3);
         for (let x = 0; x < w; x += 40) grid.lineBetween(x, 0, x, h);
         for (let y = 0; y < h; y += 40) grid.lineBetween(0, y, w, y);
 
-        agentPlayer = scene.add.circle(w / 2, h / 2, 12, 0x00ff66);
+        // Map Wall Colliders
+        walls = scene.physics.add.staticGroup();
+        
+        // Lab Wall Barriers
+        let w1 = scene.add.rectangle(w * 0.3, h * 0.4, 20, 200, 0x00aa44);
+        let w2 = scene.add.rectangle(w * 0.7, h * 0.6, 20, 200, 0x00aa44);
+        scene.physics.add.existing(w1, true);
+        scene.physics.add.existing(w2, true);
+        walls.add(w1); walls.add(w2);
+
+        // Player Agent
+        agentPlayer = scene.add.circle(100, h / 2, 12, 0x00ff66);
         scene.physics.add.existing(agentPlayer);
         agentPlayer.body.setCollideWorldBounds(true);
+        scene.physics.add.collider(agentPlayer, walls);
+
+        // Zombie Mutator
+        zombie = scene.add.circle(w - 100, h / 2, 14, 0xff0000);
+        scene.physics.add.existing(zombie);
+        zombie.body.setCollideWorldBounds(true);
+        scene.physics.add.collider(zombie, walls);
 
         flashlightGraphics = scene.add.graphics();
         cursors = scene.input.keyboard.createCursorKeys();
@@ -324,18 +331,34 @@
 
       agentPlayer.body.setVelocity(vx * 160, vy * 160);
 
+      // Zombie AI chasing Agent
+      if (zombie) {
+        let dx = agentPlayer.x - zombie.x;
+        let dy = agentPlayer.y - zombie.y;
+        let dist = Math.hypot(dx, dy);
+        
+        if (dist < 400) {
+          zombie.body.setVelocity((dx / dist) * 70, (dy / dist) * 70);
+        }
+
+        if (dist < 120 && time - lastSendTime > 1500) {
+          sendGameEvent("ZOMBIE_WARN", { dist: Math.round(dist) });
+        }
+      }
+
+      // Flashlight & Fog rendering
       flashlightGraphics.clear();
-      flashlightGraphics.fillStyle(0x000000, 0.94);
+      flashlightGraphics.fillStyle(0x000000, 0.95);
       flashlightGraphics.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
       let angle = Math.atan2(vy, vx);
       if (vx === 0 && vy === 0) angle = -Math.PI / 2;
-      let flickerRadius = 180 + Math.sin(time / 50) * 8 + Math.random() * 4;
+      let flickerRadius = 190 + Math.sin(time / 50) * 8 + Math.random() * 4;
 
       flashlightGraphics.fillStyle(0xffffaa, 0.25);
       flashlightGraphics.beginPath();
       flashlightGraphics.moveTo(agentPlayer.x, agentPlayer.y);
-      flashlightGraphics.arc(agentPlayer.x, agentPlayer.y, flickerRadius, angle - 0.4, angle + 0.4, false);
+      flashlightGraphics.arc(agentPlayer.x, agentPlayer.y, flickerRadius, angle - 0.45, angle + 0.45, false);
       flashlightGraphics.lineTo(agentPlayer.x, agentPlayer.y);
       flashlightGraphics.closePath();
       flashlightGraphics.fillPath();
