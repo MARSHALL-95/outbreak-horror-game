@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>DEADLINE: Outbreak</title>
   
-  <!-- Dummy inline Favicon to silence 404 error in browser console -->
   <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
   <!-- Open Source Libraries via CDN -->
@@ -147,17 +146,25 @@
       statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
 
       roomRef = db.ref('rooms/' + roomCode);
+      
+      // Store initial room state
       roomRef.set({
         status: 'waiting',
         created: Date.now()
+      }).then(() => {
+        console.log("Room " + roomCode + " created in Firebase!");
+      }).catch((err) => {
+        alert("Firebase Host Error: " + err.message);
       });
 
+      // Listen for status change triggered by Joining Operator
       roomRef.child('status').on('value', (snapshot) => {
         if (snapshot.val() === 'active') {
           startGame("FIELD_AGENT");
         }
       });
 
+      // Listen for Operator incoming events
       roomRef.child('events').on('child_added', (snapshot) => {
         const data = snapshot.val();
         if (data && data.sender !== 'FIELD_AGENT' && window.onPeerEvent) {
@@ -171,34 +178,39 @@
       const statusEl = document.getElementById('status');
 
       if (input.length !== 4) {
-        alert("Please enter a valid 4-letter room code!");
+        alert("Please enter a 4-letter room code!");
         return;
       }
 
-      statusEl.innerHTML = "<span style='color:yellow;'>CONNECTING TO " + input + "...</span>";
+      statusEl.innerHTML = "<span style='color:yellow;'>SEARCHING FOR ROOM " + input + "...</span>";
 
       userRole = "OPERATOR";
       roomCode = input;
       roomRef = db.ref('rooms/' + roomCode);
 
+      // Verify room exists before attempting activation
       roomRef.once('value', (snapshot) => {
         if (!snapshot.exists()) {
-          statusEl.innerHTML = "<b style='color:red;'>Room " + roomCode + " not found. Ensure Host is waiting!</b>";
+          statusEl.innerHTML = "<b style='color:red;'>ROOM " + roomCode + " NOT FOUND! Ensured Host generated it?</b>";
           return;
         }
 
-        roomRef.update({ status: 'active' });
+        statusEl.innerHTML = "<span style='color:#00ff66;'>ROOM FOUND! LAUNCHING CONSOLE...</span>";
 
-        roomRef.child('events').on('child_added', (snapshot) => {
-          const data = snapshot.val();
-          if (data && data.sender !== 'OPERATOR' && window.onPeerEvent) {
-            window.onPeerEvent(data);
-          }
+        // Mark room active to notify Host
+        roomRef.update({ status: 'active' }).then(() => {
+          // Listen for incoming Agent events
+          roomRef.child('events').on('child_added', (snapshot) => {
+            const data = snapshot.val();
+            if (data && data.sender !== 'OPERATOR' && window.onPeerEvent) {
+              window.onPeerEvent(data);
+            }
+          });
+
+          startGame("OPERATOR");
         });
-
-        startGame("OPERATOR");
       }, (error) => {
-        alert("Firebase Database Error: " + error.message);
+        statusEl.innerHTML = "<b style='color:red;'>Firebase Error: " + error.message + "</b>";
       });
     }
 
