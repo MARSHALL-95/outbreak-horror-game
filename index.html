@@ -112,7 +112,6 @@
   <div id="game-container"></div>
 
   <script>
-    // Configured with Tharun's Firebase Project
     const firebaseConfig = {
       apiKey: "AIzaSyDwYssSsGmEIi_KSP3BtRVPkC0CtzrdtyY",
       authDomain: "outbreak-game-a9f99.firebaseapp.com",
@@ -139,6 +138,7 @@
     }
 
     function createRoom() {
+      userRole = "FIELD_AGENT";
       roomCode = makeCode();
       const statusEl = document.getElementById('status');
       statusEl.innerHTML = `ROOM CODE: <b style="color:#00ff66; font-size: 26px;">${roomCode}</b><br><span style="color:#aaa;">Waiting for Operator to enter code...</span>`;
@@ -149,14 +149,12 @@
         created: Date.now()
       });
 
-      // Listen for Operator joining
       roomRef.child('status').on('value', (snapshot) => {
-        if (snapshot.val() === 'active' && userRole === null) {
+        if (snapshot.val() === 'active') {
           startGame("FIELD_AGENT");
         }
       });
 
-      // Listen for incoming game events (door overrides)
       roomRef.child('events').on('child_added', (snapshot) => {
         const data = snapshot.val();
         if (data && data.sender !== 'FIELD_AGENT' && window.onPeerEvent) {
@@ -172,6 +170,7 @@
         return;
       }
 
+      userRole = "OPERATOR";
       roomCode = input;
       roomRef = db.ref('rooms/' + roomCode);
 
@@ -181,10 +180,8 @@
           return;
         }
 
-        // Mark room as active
         roomRef.update({ status: 'active' });
 
-        // Listen for incoming game events (telemetry, zombie alerts)
         roomRef.child('events').on('child_added', (snapshot) => {
           const data = snapshot.val();
           if (data && data.sender !== 'OPERATOR' && window.onPeerEvent) {
@@ -197,7 +194,7 @@
     }
 
     function sendGameEvent(type, payload = {}) {
-      if (roomRef) {
+      if (roomRef && userRole) {
         roomRef.child('events').push({
           sender: userRole,
           type: type,
