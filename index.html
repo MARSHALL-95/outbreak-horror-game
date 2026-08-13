@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>DEADLINE: Outbreak</title>
+  
+  <!-- Dummy inline Favicon to silence 404 error in browser console -->
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
   <!-- Open Source Libraries via CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
@@ -165,10 +168,14 @@
 
     function joinRoom() {
       const input = document.getElementById('join-code').value.trim().toUpperCase();
+      const statusEl = document.getElementById('status');
+
       if (input.length !== 4) {
         alert("Please enter a valid 4-letter room code!");
         return;
       }
+
+      statusEl.innerHTML = "<span style='color:yellow;'>CONNECTING TO " + input + "...</span>";
 
       userRole = "OPERATOR";
       roomCode = input;
@@ -176,7 +183,7 @@
 
       roomRef.once('value', (snapshot) => {
         if (!snapshot.exists()) {
-          document.getElementById('status').innerHTML = "<b style='color:red;'>Room " + roomCode + " not found. Ensure Host is waiting!</b>";
+          statusEl.innerHTML = "<b style='color:red;'>Room " + roomCode + " not found. Ensure Host is waiting!</b>";
           return;
         }
 
@@ -190,6 +197,8 @@
         });
 
         startGame("OPERATOR");
+      }, (error) => {
+        alert("Firebase Database Error: " + error.message);
       });
     }
 
